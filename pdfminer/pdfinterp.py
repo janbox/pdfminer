@@ -25,7 +25,7 @@ from .pdffont import PDFType1Font
 from .pdffont import PDFTrueTypeFont
 from .pdffont import PDFType3Font
 from .pdffont import PDFCIDFont
-from .pdfcolor import PDFColorSpace
+from .pdfcolor import PDFColorSpace, PDFColor
 from .pdfcolor import PREDEFINED_COLORSPACE
 from .utils import choplist
 from .utils import mult_matrix
@@ -48,6 +48,11 @@ LITERAL_TEXT = LIT('Text')
 LITERAL_FONT = LIT('Font')
 LITERAL_FORM = LIT('Form')
 LITERAL_IMAGE = LIT('Image')
+
+LITERAL_DEVICE_RGB = LIT('DeviceRGB')
+LITERAL_DEVICE_GRAY = LIT('DeviceGRAY')
+LITERAL_DEVICE_CMYK = LIT('DeviceCMYK')
+
 
 
 ##  PDFTextState
@@ -100,7 +105,7 @@ class PDFTextState(object):
 ##
 class PDFGraphicState(object):
 
-    def __init__(self):
+    def __init__(self, default_cs=None):
         self.linewidth = 0
         self.linecap = None
         self.linejoin = None
@@ -108,6 +113,8 @@ class PDFGraphicState(object):
         self.dash = None
         self.intent = None
         self.flatness = None
+        self.color = PDFColor(cs=default_cs)
+        self.ncolor = PDFColor(cs=default_cs)
         return
 
     def copy(self):
@@ -119,13 +126,15 @@ class PDFGraphicState(object):
         obj.dash = self.dash
         obj.intent = self.intent
         obj.flatness = self.flatness
+        obj.color = self.color.copy()
+        obj.ncolor = self.ncolor.copy()
         return obj
 
     def __repr__(self):
         return ('<PDFGraphicState: linewidth=%r, linecap=%r, linejoin=%r, '
-                ' miterlimit=%r, dash=%r, intent=%r, flatness=%r>' %
+                ' miterlimit=%r, dash=%r, intent=%r, flatness=%r, color=%r, ncolor=%r>' %
                 (self.linewidth, self.linecap, self.linejoin,
-                 self.miterlimit, self.dash, self.intent, self.flatness))
+                 self.miterlimit, self.dash, self.intent, self.flatness, self.color, self.ncolor))
 
 
 ##  Resource Manager
@@ -140,7 +149,7 @@ class PDFResourceManager(object):
     """
 
     debug = False
-    
+
     def __init__(self, caching=True):
         self.caching = caching
         self._cached_fonts = {}
@@ -314,6 +323,7 @@ class PDFContentParser(PSStackParser):
 class PDFPageInterpreter(object):
 
     debug = 0
+    exec_logger_filter = []
 
     def __init__(self, rsrcmgr, device):
         self.rsrcmgr = rsrcmgr
@@ -367,19 +377,25 @@ class PDFPageInterpreter(object):
     # init_state(ctm)
     #   Initialize the text and graphic states for rendering a page.
     def init_state(self, ctm):
+        if self.csmap:
+            default_cs = self.csmap.values()[0]
+        else:
+            default_cs = None
+
         # gstack: stack for graphical states.
         self.gstack = []
         self.ctm = ctm
         self.device.set_ctm(self.ctm)
         self.textstate = PDFTextState()
-        self.graphicstate = PDFGraphicState()
+        self.graphicstate = PDFGraphicState(default_cs)
         self.curpath = []
         # argstack: stack for command arguments.
         self.argstack = []
+
         # set some global states.
-        self.scs = self.ncs = None
-        if self.csmap:
-            self.scs = self.ncs = self.csmap.values()[0]
+        # self.scs = self.ncs = None
+        # if self.csmap:
+        #     self.scs = self.ncs = self.csmap.values()[0]
         return
 
     def push(self, obj):
@@ -399,6 +415,30 @@ class PDFPageInterpreter(object):
     def set_current_state(self, state):
         (self.ctm, self.textstate, self.graphicstate) = state
         self.device.set_ctm(self.ctm)
+        return
+
+    def update_color(self, strock):
+        color = self.graphicstate.color if strock else self.graphicstate.ncolor
+        if color.cs:
+            n = color.cs.ncomponents
+        else:
+            if STRICT:
+                raise PDFInterpreterError('No colorspace specified!')
+            n = 1
+
+        color.set_clr(self.pop(n))
+        return
+
+    def set_color_space(self, strock, name, clr=None):
+        color = self.graphicstate.color if strock else self.graphicstate.ncolor
+        try:
+            color.set_cs(self.csmap[literal_name(name)])
+        except KeyError:
+            if STRICT:
+                raise PDFInterpreterError('Undefined ColorSpace: %r' % name)
+
+        if clr:
+            color.set_clr(clr)
         return
 
     # gsave
@@ -562,71 +602,49 @@ class PDFPageInterpreter(object):
 
     # setcolorspace-stroking
     def do_CS(self, name):
-        try:
-            self.scs = self.csmap[literal_name(name)]
-        except KeyError:
-            if STRICT:
-                raise PDFInterpreterError('Undefined ColorSpace: %r' % name)
-        return
+        self.set_color_space(True, name)
 
     # setcolorspace-non-strokine
     def do_cs(self, name):
-        try:
-            self.ncs = self.csmap[literal_name(name)]
-        except KeyError:
-            if STRICT:
-                raise PDFInterpreterError('Undefined ColorSpace: %r' % name)
-        return
+        self.set_color_space(False, name)
 
     # setgray-stroking
     def do_G(self, gray):
-        #self.do_CS(LITERAL_DEVICE_GRAY)
+        self.set_color_space(True, LITERAL_DEVICE_GRAY, [gray])
         return
 
     # setgray-non-stroking
     def do_g(self, gray):
-        #self.do_cs(LITERAL_DEVICE_GRAY)
+        self.set_color_space(False, LITERAL_DEVICE_GRAY, [gray])
         return
 
     # setrgb-stroking
     def do_RG(self, r, g, b):
-        #self.do_CS(LITERAL_DEVICE_RGB)
+        self.set_color_space(True, LITERAL_DEVICE_RGB, [r, g, b])
         return
 
     # setrgb-non-stroking
     def do_rg(self, r, g, b):
-        #self.do_cs(LITERAL_DEVICE_RGB)
+        self.set_color_space(False, LITERAL_DEVICE_RGB, [r, g, b])
         return
 
     # setcmyk-stroking
     def do_K(self, c, m, y, k):
-        #self.do_CS(LITERAL_DEVICE_CMYK)
+        self.set_color_space(True, LITERAL_DEVICE_CMYK, [c, m, y, k])
         return
 
     # setcmyk-non-stroking
     def do_k(self, c, m, y, k):
-        #self.do_cs(LITERAL_DEVICE_CMYK)
+        self.set_color_space(False, LITERAL_DEVICE_CMYK, [c, m, y, k])
         return
 
     # setcolor
     def do_SCN(self):
-        if self.scs:
-            n = self.scs.ncomponents
-        else:
-            if STRICT:
-                raise PDFInterpreterError('No colorspace specified!')
-            n = 1
-        self.pop(n)
+        self.update_color(True)
         return
 
     def do_scn(self):
-        if self.ncs:
-            n = self.ncs.ncomponents
-        else:
-            if STRICT:
-                raise PDFInterpreterError('No colorspace specified!')
-            n = 1
-        self.pop(n)
+        self.update_color(False)
         return
 
     def do_SC(self):
@@ -757,7 +775,7 @@ class PDFPageInterpreter(object):
             if STRICT:
                 raise PDFInterpreterError('No font specified!')
             return
-        self.device.render_string(self.textstate, seq)
+        self.device.render_string(self.textstate, seq, self.graphicstate)
         return
 
     # show
@@ -871,17 +889,25 @@ class PDFPageInterpreter(object):
                     nargs = func.func_code.co_argcount-1
                     if nargs:
                         args = self.pop(nargs)
-                        if self.debug:
-                            logging.debug('exec: %s %r' % (name, args))
+                        if self.debug and name not in self.exec_logger_filter:
+                            logging.debug('exec-n: %s %r' % (name, args))
                         if len(args) == nargs:
                             func(*args)
                     else:
-                        if self.debug:
-                            logging.debug('exec: %s' % name)
+                        args = self.argstack[:]
+                        # if self.debug:
+                        #     logging.debug('exec: %s' % name)
                         func()
+                        if self.debug and name not in self.exec_logger_filter:
+                            if len(args) > len(self.argstack):
+                                logging.debug('exec: %s %r' % (name, args[len(self.argstack):]))
+                            else:
+                                logging.debug('exec: %s' % name)
                 else:
                     if STRICT:
                         raise PDFInterpreterError('Unknown operator: %r' % name)
+                    else:
+                        logging.debug('Unknown operator: %r' % name)
             else:
                 self.push(obj)
         return

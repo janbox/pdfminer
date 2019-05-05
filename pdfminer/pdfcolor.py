@@ -32,3 +32,34 @@ PREDEFINED_COLORSPACE = dict(
         'Indexed': 1,
         'Pattern': 1,
     }.iteritems())
+
+
+##  PDFColor
+##
+class PDFColor(object):
+
+    def __init__(self, cs=None, clr=None):
+        self.cs = cs
+        self.clr = clr
+        return
+
+    def set(self, cs, clr):
+        self.cs = cs
+        self.clr = clr
+
+    # color-space
+    def set_cs(self, cs):
+        self.cs = cs
+        return
+
+    # set stroke color-space
+    def set_clr(self, clr):
+        self.clr = clr
+        return
+
+    def copy(self):
+        return PDFColor(self.cs, self.clr)
+
+    def __repr__(self):
+        return '<%s>:%r' % (self.cs.name, self.clr)
+
