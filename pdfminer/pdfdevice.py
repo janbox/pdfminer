@@ -53,7 +53,7 @@ class PDFDevice(object):
     def render_image(self, name, stream):
         return
 
-    def render_string(self, textstate, seq):
+    def render_string(self, textstate, seq, graphicstate):
         return
 
 
@@ -61,7 +61,7 @@ class PDFDevice(object):
 ##
 class PDFTextDevice(PDFDevice):
 
-    def render_string(self, textstate, seq):
+    def render_string(self, textstate, seq, graphicstate):
         matrix = mult_matrix(textstate.matrix, self.ctm)
         font = textstate.font
         fontsize = textstate.fontsize
@@ -136,7 +136,7 @@ class TagExtractor(PDFDevice):
         self._stack = []
         return
 
-    def render_string(self, textstate, seq):
+    def render_string(self, textstate, seq, graphicstate):
         font = textstate.font
         text = ''
         for obj in seq:
