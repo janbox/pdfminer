@@ -190,6 +190,38 @@ class FileUnicodeMap(UnicodeMap):
             raise TypeError(code)
         return
 
+    def extend_unicodemap(self):
+        self.ext_cmap = None
+        min_cid = None
+        max_cid = None
+        off = None
+        for cid, utext in self.cid2unichr.iteritems():
+            ucode = ord(utext[0])
+            if 0x4e00 <= ucode <= 0x9fa5:
+                if min_cid is None:
+                    min_cid = cid
+                    max_cid = cid
+                    off = ucode - cid
+                else:
+                    min_cid = min(min_cid, cid)
+                    max_cid = max(max_cid, cid)
+                    if ucode - cid != off:
+                        off = None
+                        break
+        if off:
+            self.ext_cmap = (min_cid, max_cid, off)
+        return off
+
+    def get_unichr(self, cid):
+        '''
+        extend cmap ...
+        :param cid:
+        :return:
+        '''
+        if cid not in self.cid2unichr and self.ext_cmap and self.ext_cmap[0] <= cid <= self.ext_cmap[1]:
+            return unichr(cid + self.ext_cmap[2])
+
+        return self.cid2unichr[cid]
 
 ##  PyCMap
 ##

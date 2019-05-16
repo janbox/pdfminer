@@ -463,15 +463,23 @@ LITERAL_STANDARD_ENCODING = LIT('StandardEncoding')
 LITERAL_TYPE1C = LIT('Type1C')
 
 
+_font_name_index = 0
+
 # PDFFont
 class PDFFont(object):
 
     def __init__(self, descriptor, widths, default_width=None):
+        global _font_name_index
         self.descriptor = descriptor
         self.widths = widths
         self.fontname = resolve1(descriptor.get('FontName', 'unknown'))
         if isinstance(self.fontname, PSLiteral):
             self.fontname = literal_name(self.fontname)
+
+        if not self.fontname:
+            self.fontname = "font_%d" % _font_name_index
+            _font_name_index += 1
+
         self.flags = int_value(descriptor.get('Flags', 0))
         self.ascent = num_value(descriptor.get('Ascent', 0))
         self.descent = num_value(descriptor.get('Descent', 0))
@@ -527,6 +535,19 @@ class PDFFont(object):
     def string_width(self, s):
         return sum(self.char_width(cid) for cid in self.decode(s))
 
+    def resolve_name(self, name, default_name):
+        global _font_name_index
+        resolved_name = ''
+        try:
+            resolved_name = literal_name(name)
+        except KeyError:
+            if STRICT:
+                raise PDFFontError('%s is missing'%default_name)
+        if not resolved_name:
+            resolved_name = "%s_%d" % (default_name, _font_name_index)
+            _font_name_index += 1
+        return resolved_name
+
 
 # PDFSimpleFont
 class PDFSimpleFont(PDFFont):
@@ -569,12 +590,8 @@ class PDFSimpleFont(PDFFont):
 class PDFType1Font(PDFSimpleFont):
 
     def __init__(self, rsrcmgr, spec):
-        try:
-            self.basefont = literal_name(spec['BaseFont'])
-        except KeyError:
-            if STRICT:
-                raise PDFFontError('BaseFont is missing')
-            self.basefont = 'unknown'
+        self.basefont = self.resolve_name(spec['BaseFont'], "BaseFont")
+
         try:
             (descriptor, widths) = FontMetricsDB.get_metrics(self.basefont)
         except KeyError:
@@ -631,21 +648,15 @@ class PDFType3Font(PDFSimpleFont):
 class PDFCIDFont(PDFFont):
 
     def __init__(self, rsrcmgr, spec):
-        try:
-            self.basefont = literal_name(spec['BaseFont'])
-        except KeyError:
-            if STRICT:
-                raise PDFFontError('BaseFont is missing')
-            self.basefont = 'unknown'
+
+        self.basefont = self.resolve_name(spec['BaseFont'], "BaseFont")
+
         self.cidsysteminfo = dict_value(spec.get('CIDSystemInfo', {}))
         self.cidcoding = '%s-%s' % (self.cidsysteminfo.get('Registry', 'unknown'),
                                     self.cidsysteminfo.get('Ordering', 'unknown'))
-        try:
-            name = literal_name(spec['Encoding'])
-        except KeyError:
-            if STRICT:
-                raise PDFFontError('Encoding is unspecified')
-            name = 'unknown'
+
+        name = self.resolve_name(spec['Encoding'], "Encodeing")
+
         try:
             self.cmap = CMapDB.get_cmap(name)
         except CMapDB.CMapNotFound as e:
@@ -668,6 +679,7 @@ class PDFCIDFont(PDFFont):
             strm = stream_value(spec['ToUnicode'])
             self.unicode_map = FileUnicodeMap()
             CMapParser(self.unicode_map, BytesIO(strm.get_data())).run()
+            self.unicode_map.extend_unicodemap()
         elif self.cidcoding in ('Adobe-Identity', 'Adobe-UCS'):
             if ttf:
                 try:
