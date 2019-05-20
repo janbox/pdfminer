@@ -196,6 +196,8 @@ class FileUnicodeMap(UnicodeMap):
         max_cid = None
         off = None
         for cid, utext in self.cid2unichr.iteritems():
+            if len(utext) == 0:
+                continue
             ucode = ord(utext[0])
             if 0x4e00 <= ucode <= 0x9fa5:
                 if min_cid is None:

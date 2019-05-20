@@ -472,17 +472,29 @@ class PDFFont(object):
         global _font_name_index
         self.descriptor = descriptor
         self.widths = widths
-        self.fontname = resolve1(descriptor.get('FontName', 'unknown'))
-        if isinstance(self.fontname, PSLiteral):
-            self.fontname = literal_name(self.fontname)
 
+        # fontname to unicode
+        self.fontname = self._resolve_fontname(descriptor.get('FontName', "default"))
         if not self.fontname:
-            self.fontname = "font_%d" % _font_name_index
-            _font_name_index += 1
+            self.fontname = self.basefont
+
+        self.fontfamily = self._resolve_fontname(descriptor.get('FontFamily', ''))
+
+        # resolve from fontname if fontfamily not available
+        if not self.fontfamily:
+            self.fontfamily = self._get_family_from_fontname(self.fontname)
 
         self.flags = int_value(descriptor.get('Flags', 0))
         self.ascent = num_value(descriptor.get('Ascent', 0))
         self.descent = num_value(descriptor.get('Descent', 0))
+
+        # fixup by janbox on 20190520
+        if self.descent > 0:
+            self.descent = -self.descent
+
+        if "FontWeight" in descriptor:
+            self.width = num_value(descriptor["FontWeight"])
+
         self.italic_angle = num_value(descriptor.get('ItalicAngle', 0))
         self.default_width = default_width or num_value(descriptor.get('MissingWidth', 0))
         self.leading = num_value(descriptor.get('Leading', 0))
@@ -515,9 +527,13 @@ class PDFFont(object):
         return w * self.hscale
 
     def get_height(self):
-        h = self.bbox[3]-self.bbox[1]
+        # use font-descriptor first, by janbox on 20190520
+        h = self.ascent - self.descent
         if h == 0:
-            h = self.ascent - self.descent
+            h = self.bbox[3] - self.bbox[1]
+        # h = self.bbox[3]-self.bbox[1]
+        # if h == 0:
+        #     h = self.ascent - self.descent
         return h * self.vscale
 
     def char_width(self, cid):
@@ -548,6 +564,43 @@ class PDFFont(object):
             _font_name_index += 1
         return resolved_name
 
+    def _name_to_unicode(self, name):
+        if isinstance(name, unicode):
+            return name
+        # check leading byte...
+        if name[0:2] == '\xfe\xff':
+            return name[2:].decode('utf-16-be')
+        elif name[0:2] == '\xff\xfe':
+            return name[2:].decode('utf-16-le')
+
+        # no leading byte, try ...
+        for coding in ['utf-8', 'gbk', 'ascii', 'utf-16-be', 'utf-16-le']:
+            try:
+                return name.decode(coding)
+            except Exception as e:
+                # traceback.print_stack()
+                pass
+        return None
+
+    def _resolve_fontname(self, fontname):
+        global _font_name_index
+        fontname = resolve1(fontname)
+        if isinstance(fontname, PSLiteral):
+            fontname = literal_name(fontname)
+
+        if fontname:
+            fontname = self._name_to_unicode(fontname)
+
+        return fontname
+
+    def _get_family_from_fontname(self, fontname):
+        fontfamily = fontname.split("+")[-1]
+        if not fontfamily:
+            fontfamily = fontname
+
+        fontfamily = fontfamily.split(',')[0]
+        return fontfamily
+
 
 # PDFSimpleFont
 class PDFSimpleFont(PDFFont):
@@ -564,7 +617,9 @@ class PDFSimpleFont(PDFFont):
             name = literal_name(encoding.get('BaseEncoding', LITERAL_STANDARD_ENCODING))
             diff = list_value(encoding.get('Differences', None))
             self.cid2unicode = EncodingDB.get_encoding(name, diff)
+            self.encoding = name
         else:
+            self.encoding = literal_name(encoding)
             self.cid2unicode = EncodingDB.get_encoding(literal_name(encoding))
         self.unicode_map = None
         if 'ToUnicode' in spec:
@@ -654,6 +709,8 @@ class PDFCIDFont(PDFFont):
         self.cidsysteminfo = dict_value(spec.get('CIDSystemInfo', {}))
         self.cidcoding = '%s-%s' % (self.cidsysteminfo.get('Registry', 'unknown'),
                                     self.cidsysteminfo.get('Ordering', 'unknown'))
+
+        self.encoding = self.cidcoding
 
         name = self.resolve_name(spec['Encoding'], "Encodeing")
 
