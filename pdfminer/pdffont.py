@@ -606,6 +606,9 @@ class PDFFont(object):
 class PDFSimpleFont(PDFFont):
 
     def __init__(self, descriptor, widths, spec):
+        self.subtype = literal_name(spec['Subtype'])
+        self.spec = spec
+
         # Font encoding is specified either by a name of
         # built-in encoding or a dictionary that describes
         # the differences.
@@ -681,7 +684,7 @@ class PDFType3Font(PDFSimpleFont):
 
     def __init__(self, rsrcmgr, spec):
         firstchar = int_value(spec.get('FirstChar', 0))
-        #lastchar = int_value(spec.get('LastChar', 0))
+        # lastchar = int_value(spec.get('LastChar', 0))
         widths = list_value(spec.get('Widths', [0]*256))
         widths = dict((i+firstchar, w) for (i, w) in enumerate(widths))
         if 'FontDescriptor' in spec:
@@ -693,6 +696,8 @@ class PDFType3Font(PDFSimpleFont):
         self.matrix = tuple(list_value(spec.get('FontMatrix')))
         (_, self.descent, _, self.ascent) = self.bbox
         (self.hscale, self.vscale) = apply_matrix_norm(self.matrix, (1, 1))
+        if self.vscale < 0:
+            self.vscale = -self.vscale
         return
 
     def __repr__(self):
@@ -703,6 +708,8 @@ class PDFType3Font(PDFSimpleFont):
 class PDFCIDFont(PDFFont):
 
     def __init__(self, rsrcmgr, spec):
+        self.subtype = literal_name(spec['Subtype'])
+        self.spec = spec
 
         self.basefont = self.resolve_name(spec['BaseFont'], "BaseFont")
 
