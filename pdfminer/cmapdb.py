@@ -176,6 +176,10 @@ class FileCMap(CMap):
 ##
 class FileUnicodeMap(UnicodeMap):
 
+    def __init__(self, **kwargs):
+        UnicodeMap.__init__(self, **kwargs)
+        self.ext_cmap = None
+
     def add_cid2unichr(self, cid, code):
         assert isinstance(cid, int)
         if isinstance(code, PSLiteral):
@@ -191,7 +195,6 @@ class FileUnicodeMap(UnicodeMap):
         return
 
     def extend_unicodemap(self):
-        self.ext_cmap = None
         min_cid = None
         max_cid = None
         off = None

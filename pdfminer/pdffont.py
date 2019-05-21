@@ -468,8 +468,11 @@ _font_name_index = 0
 # PDFFont
 class PDFFont(object):
 
-    def __init__(self, descriptor, widths, default_width=None):
+    def __init__(self, descriptor, widths, spec, default_width=None):
         global _font_name_index
+        # self.spec = spec
+        self.subtype = literal_name(spec['Subtype'])
+
         self.descriptor = descriptor
         self.widths = widths
 
@@ -601,14 +604,16 @@ class PDFFont(object):
         fontfamily = fontfamily.split(',')[0]
         return fontfamily
 
+    def _parse_unicode_map(self, strm):
+        unicode_map = FileUnicodeMap()
+        CMapParser(unicode_map, BytesIO(strm.get_data())).run()
+        unicode_map.extend_unicodemap()
+        return unicode_map
 
 # PDFSimpleFont
 class PDFSimpleFont(PDFFont):
 
     def __init__(self, descriptor, widths, spec):
-        self.subtype = literal_name(spec['Subtype'])
-        self.spec = spec
-
         # Font encoding is specified either by a name of
         # built-in encoding or a dictionary that describes
         # the differences.
@@ -626,10 +631,8 @@ class PDFSimpleFont(PDFFont):
             self.cid2unicode = EncodingDB.get_encoding(literal_name(encoding))
         self.unicode_map = None
         if 'ToUnicode' in spec:
-            strm = stream_value(spec['ToUnicode'])
-            self.unicode_map = FileUnicodeMap()
-            CMapParser(self.unicode_map, BytesIO(strm.get_data())).run()
-        PDFFont.__init__(self, descriptor, widths)
+            self.unicode_map = self._parse_unicode_map(stream_value(spec['ToUnicode']))
+        PDFFont.__init__(self, descriptor, widths, spec)
         return
 
     def to_unichr(self, cid):
@@ -695,10 +698,15 @@ class PDFType3Font(PDFSimpleFont):
         PDFSimpleFont.__init__(self, descriptor, widths, spec)
         self.matrix = tuple(list_value(spec.get('FontMatrix')))
         (_, self.descent, _, self.ascent) = self.bbox
-        (self.hscale, self.vscale) = apply_matrix_norm(self.matrix, (1, 1))
-        if self.vscale < 0:
-            self.vscale = -self.vscale
+        # (self.hscale, self.vscale) = apply_matrix_norm(self.matrix, (1, 1))
+        # 20190521, by janbox
+        (self.hscale, _) = apply_matrix_norm(self.matrix, (1, 1))
         return
+
+    def estimate_scaling(self):
+        # for height =>
+        height = self.get_height()
+        return 1000.0 / 255 if height < 0.3 else 1000.0 / 625 if height < 0.7 else 1.0
 
     def __repr__(self):
         return '<PDFType3Font>'
@@ -708,9 +716,6 @@ class PDFType3Font(PDFSimpleFont):
 class PDFCIDFont(PDFFont):
 
     def __init__(self, rsrcmgr, spec):
-        self.subtype = literal_name(spec['Subtype'])
-        self.spec = spec
-
         self.basefont = self.resolve_name(spec['BaseFont'], "BaseFont")
 
         self.cidsysteminfo = dict_value(spec.get('CIDSystemInfo', {}))
@@ -740,10 +745,7 @@ class PDFCIDFont(PDFFont):
                                BytesIO(self.fontfile.get_data()))
         self.unicode_map = None
         if 'ToUnicode' in spec:
-            strm = stream_value(spec['ToUnicode'])
-            self.unicode_map = FileUnicodeMap()
-            CMapParser(self.unicode_map, BytesIO(strm.get_data())).run()
-            self.unicode_map.extend_unicodemap()
+            self.unicode_map = self._parse_unicode_map(stream_value(spec['ToUnicode']))
         elif self.cidcoding in ('Adobe-Identity', 'Adobe-UCS'):
             if ttf:
                 try:
@@ -771,7 +773,7 @@ class PDFCIDFont(PDFFont):
             self.default_disp = 0
             widths = get_widths(list_value(spec.get('W', [])))
             default_width = spec.get('DW', 1000)
-        PDFFont.__init__(self, descriptor, widths, default_width=default_width)
+        PDFFont.__init__(self, descriptor, widths, spec, default_width=default_width)
         return
 
     def __repr__(self):
