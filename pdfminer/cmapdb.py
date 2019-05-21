@@ -195,6 +195,7 @@ class FileUnicodeMap(UnicodeMap):
         return
 
     def extend_unicodemap(self):
+        # code-range
         min_cid = None
         max_cid = None
         off = None
@@ -215,6 +216,17 @@ class FileUnicodeMap(UnicodeMap):
                         break
         if off:
             self.ext_cmap = (min_cid, max_cid, off)
+
+        off_map = {}
+        for cid, utext in self.cid2unichr.iteritems():
+            if len(utext) == 0:
+                off_map[cid] = (utext, None, None)
+                continue
+            ucode = ord(utext[0])
+            off_map[cid] = (utext, ucode, ucode-cid)
+
+        self.off_map = off_map
+
         return off
 
     def get_unichr(self, cid):

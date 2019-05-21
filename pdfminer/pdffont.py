@@ -491,12 +491,9 @@ class PDFFont(object):
         self.ascent = num_value(descriptor.get('Ascent', 0))
         self.descent = num_value(descriptor.get('Descent', 0))
 
-        # fixup by janbox on 20190520
+        # fixup ill-pdf, by janbox on 20190520
         if self.descent > 0:
             self.descent = -self.descent
-
-        if "FontWeight" in descriptor:
-            self.width = num_value(descriptor["FontWeight"])
 
         self.italic_angle = num_value(descriptor.get('ItalicAngle', 0))
         self.default_width = default_width or num_value(descriptor.get('MissingWidth', 0))
@@ -554,8 +551,16 @@ class PDFFont(object):
     def string_width(self, s):
         return sum(self.char_width(cid) for cid in self.decode(s))
 
+    def is_bold(self):
+        # FontWeight is optional
+        if 'FontWeight' in self.descriptor and self.descriptor['FontWeight'] > 500:
+            return True
+
+        if self.fontname.lower().find('bold') >= 0:
+            return True
+        return False
+
     def resolve_name(self, name, default_name):
-        global _font_name_index
         resolved_name = ''
         try:
             resolved_name = literal_name(name)
@@ -563,9 +568,14 @@ class PDFFont(object):
             if STRICT:
                 raise PDFFontError('%s is missing'%default_name)
         if not resolved_name:
-            resolved_name = "%s_%d" % (default_name, _font_name_index)
-            _font_name_index += 1
+            resolved_name = self._make_unique_name(default_name)
         return resolved_name
+
+    def _make_unique_name(self, prefix):
+        global _font_name_index
+        name = "%s_%d" % (prefix, _font_name_index)
+        _font_name_index += 1
+        return name
 
     def _name_to_unicode(self, name):
         if isinstance(name, unicode):
@@ -646,6 +656,21 @@ class PDFSimpleFont(PDFFont):
         except KeyError:
             raise PDFUnicodeNotDefined(None, cid)
 
+    def _resolve_widths(self, spec):
+        firstchar = int_value(spec.get('FirstChar', 0))
+        # lastchar = int_value(spec.get('LastChar', 0))
+        widths_l = list_value(spec.get('Widths', [0]*256))
+        widths = dict((i+firstchar, w) for (i, w) in enumerate(widths_l))
+        # widths = {}
+        # prev_w = None
+        # for (i, w) in enumerate(widths_l):
+        #     if not prev_w:
+        #         prev_w = w
+        #     elif w == 0:
+        #         w = prev_w
+        #     widths[i+firstchar] = w
+        return widths
+
 
 # PDFType1Font
 class PDFType1Font(PDFSimpleFont):
@@ -657,10 +682,7 @@ class PDFType1Font(PDFSimpleFont):
             (descriptor, widths) = FontMetricsDB.get_metrics(self.basefont)
         except KeyError:
             descriptor = dict_value(spec.get('FontDescriptor', {}))
-            firstchar = int_value(spec.get('FirstChar', 0))
-            #lastchar = int_value(spec.get('LastChar', 255))
-            widths = list_value(spec.get('Widths', [0]*256))
-            widths = dict((i+firstchar, w) for (i, w) in enumerate(widths))
+            widths = self._resolve_widths(spec)
         PDFSimpleFont.__init__(self, descriptor, widths, spec)
         if 'Encoding' not in spec and 'FontFile' in descriptor:
             # try to recover the missing encoding info from the font file.
@@ -686,15 +708,17 @@ class PDFTrueTypeFont(PDFType1Font):
 class PDFType3Font(PDFSimpleFont):
 
     def __init__(self, rsrcmgr, spec):
-        firstchar = int_value(spec.get('FirstChar', 0))
-        # lastchar = int_value(spec.get('LastChar', 0))
-        widths = list_value(spec.get('Widths', [0]*256))
-        widths = dict((i+firstchar, w) for (i, w) in enumerate(widths))
+        widths = self._resolve_widths(spec)
         if 'FontDescriptor' in spec:
             descriptor = dict_value(spec['FontDescriptor'])
         else:
             descriptor = {'Ascent': 0, 'Descent': 0,
                           'FontBBox': spec['FontBBox']}
+            if 'Name' in spec:
+                descriptor['FontName'] = spec['Name']
+            else:
+                descriptor['FontName'] = self._make_unique_name("font")
+
         PDFSimpleFont.__init__(self, descriptor, widths, spec)
         self.matrix = tuple(list_value(spec.get('FontMatrix')))
         (_, self.descent, _, self.ascent) = self.bbox
