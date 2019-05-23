@@ -714,6 +714,9 @@ class PDFType3Font(PDFSimpleFont):
         else:
             descriptor = {'Ascent': 0, 'Descent': 0,
                           'FontBBox': spec['FontBBox']}
+            # fixup ill-type3 spec, by janbox on 20190523
+            if abs(spec['FontBBox'][2]-spec['FontBBox'][0]) == 1:
+                descriptor['FontBBox'] = (1000*spec['FontBBox'][0], 1000*spec['FontBBox'][1], 1000*spec['FontBBox'][2], abs(1000*spec['FontBBox'][3]))
             if 'Name' in spec:
                 descriptor['FontName'] = spec['Name']
             else:
