@@ -462,7 +462,7 @@ class CMapParser(PSStackParser):
             if prev:
                 # check prev and item are continues-range, and with equal-offset
                 if item[2]-item[0] == prev[2]-prev[0]:
-                    print "prev={}, item={}".format(prev, item)
+                    # print "prev={}, item={}".format(prev, item)
                     off = item[2] - item[0]
                     if add_to_map:
                         for i in range(prev[1]+1, item[0], 1):
