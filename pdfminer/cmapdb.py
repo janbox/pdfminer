@@ -194,51 +194,6 @@ class FileUnicodeMap(UnicodeMap):
             raise TypeError(code)
         return
 
-    def extend_unicodemap(self):
-        # code-range
-        min_cid = None
-        max_cid = None
-        off = None
-        for cid, utext in self.cid2unichr.iteritems():
-            if len(utext) == 0:
-                continue
-            ucode = ord(utext[0])
-            if 0x4e00 <= ucode <= 0x9fa5:
-                if min_cid is None:
-                    min_cid = cid
-                    max_cid = cid
-                    off = ucode - cid
-                else:
-                    min_cid = min(min_cid, cid)
-                    max_cid = max(max_cid, cid)
-                    if ucode - cid != off:
-                        off = None
-                        break
-        if off:
-            self.ext_cmap = (min_cid, max_cid, off)
-
-        off_map = {}
-        for cid, utext in self.cid2unichr.iteritems():
-            if len(utext) == 0:
-                off_map[cid] = (utext, None, None)
-                continue
-            ucode = ord(utext[0])
-            off_map[cid] = (utext, ucode, ucode-cid)
-
-        self.off_map = off_map
-
-        return off
-
-    def get_unichr(self, cid):
-        '''
-        extend cmap ...
-        :param cid:
-        :return:
-        '''
-        if cid not in self.cid2unichr and self.ext_cmap and self.ext_cmap[0] <= cid <= self.ext_cmap[1]:
-            return unichr(cid + self.ext_cmap[2])
-
-        return self.cid2unichr[cid]
 
 ##  PyCMap
 ##
@@ -327,6 +282,8 @@ class CMapParser(PSStackParser):
         self.cmap = cmap
         # some ToUnicode maps don't have "begincmap" keyword.
         self._in_cmap = True
+
+        self.cmap_bfrange_items = []
         return
 
     def run(self):
@@ -334,6 +291,9 @@ class CMapParser(PSStackParser):
             self.nextobject()
         except PSEOF:
             pass
+
+        # fixup cmap in ill-pdf, by janbox on 20180524
+        self.fixup_cmaps()
         return
 
     KEYWORD_BEGINCMAP = KWD(b'begincmap')
@@ -446,6 +406,7 @@ class CMapParser(PSStackParser):
                     for i in xrange(e1-s1+1):
                         x = prefix+struct.pack('>L', base+i)[-vlen:]
                         self.cmap.add_cid2unichr(s1+i, x)
+                    self.cmap_bfrange_items.append((s1, e1, base, base-s1))
             return
 
         if token is self.KEYWORD_BEGINBFCHAR:
@@ -467,6 +428,68 @@ class CMapParser(PSStackParser):
 
         self.push((pos, token))
         return
+
+    def fixup_cmaps(self):
+        if not self.cmap_bfrange_items:
+            return
+
+        # (s1, e1, base)
+        merged_bfranges = self.fill_cmap_by_ranges(self.cmap_bfrange_items, True)
+
+        if len(merged_bfranges) == len(self.cmap_bfrange_items):
+            return
+
+        # drop cross-range. merge small_range to large_range
+        results_bfranges = []
+        for item in merged_bfranges:
+            matched = self.is_subset_of_ranges(merged_bfranges, item)
+            if not matched:
+                results_bfranges.append(item)
+
+        if len(results_bfranges) != len(merged_bfranges):
+            final_bfranges = self.fill_cmap_by_ranges(results_bfranges, True)
+
+        # clear
+        self.cmap_bfrange_items = []
+
+        return
+
+    def fill_cmap_by_ranges(self, bfranges, add_to_map=True):
+        result_bfranges = []
+        last_merged = None
+        prev = None
+        for item in sorted(bfranges, key=lambda x: x[0]):
+            if prev:
+                # check prev and item are continues-range, and with equal-offset
+                if item[2]-item[0] == prev[2]-prev[0]:
+                    print "prev={}, item={}".format(prev, item)
+                    off = item[2] - item[0]
+                    if add_to_map:
+                        for i in range(prev[1]+1, item[0], 1):
+                            self.cmap.add_cid2unichr(i, i + off)
+                            pass
+                    last_merged = (last_merged[0], item[1], last_merged[2], off)
+                else:
+                    result_bfranges.append(last_merged)
+                    last_merged = item
+            else:
+                last_merged = item
+            prev = item
+        if last_merged:
+            result_bfranges.append(last_merged)
+
+        return result_bfranges
+
+    def is_subset_of_ranges(self, bfranges, range):
+        code_s = range[2]
+        code_e = range[2] + range[1] - range[0]
+        for item in bfranges:
+            # skip itself
+            if item == range:
+                continue
+            if code_s >= item[2] and code_e <= item[2] + item[1] - item[0]:
+                return item
+        return None
 
 
 # test

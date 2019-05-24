@@ -617,7 +617,6 @@ class PDFFont(object):
     def _parse_unicode_map(self, strm):
         unicode_map = FileUnicodeMap()
         CMapParser(unicode_map, BytesIO(strm.get_data())).run()
-        unicode_map.extend_unicodemap()
         return unicode_map
 
 # PDFSimpleFont
