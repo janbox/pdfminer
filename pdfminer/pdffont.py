@@ -735,7 +735,7 @@ class PDFType3Font(PDFSimpleFont):
         return 1000.0 / 255 if height < 0.3 else 1000.0 / 625 if height < 0.7 else 1.0
 
     def __repr__(self):
-        return '<PDFType3Font>'
+        return '<PDFType3Font fontname=%s>' % self.fontname
 
 
 # PDFCIDFont
