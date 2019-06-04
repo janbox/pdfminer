@@ -492,8 +492,8 @@ class PDFFont(object):
         self.descent = num_value(descriptor.get('Descent', 0))
 
         # fixup ill-pdf, by janbox on 20190520
-        if self.descent > 0:
-            self.descent = -self.descent
+        # if self.descent > 0:
+        #     self.descent = -self.descent
 
         self.italic_angle = num_value(descriptor.get('ItalicAngle', 0))
         self.default_width = default_width or num_value(descriptor.get('MissingWidth', 0))
