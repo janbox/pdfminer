@@ -25,7 +25,7 @@ from .pdffont import PDFType1Font
 from .pdffont import PDFTrueTypeFont
 from .pdffont import PDFType3Font
 from .pdffont import PDFCIDFont
-from .pdfcolor import PDFColorSpace, PDFColor
+from .pdfcolor import PDFColorSpace, PDFColor, LITERAL_DEVICE_CMYK, LITERAL_DEVICE_RGB, LITERAL_DEVICE_GRAY
 from .pdfcolor import PREDEFINED_COLORSPACE
 from .utils import choplist
 from .utils import mult_matrix
@@ -48,10 +48,6 @@ LITERAL_TEXT = LIT('Text')
 LITERAL_FONT = LIT('Font')
 LITERAL_FORM = LIT('Form')
 LITERAL_IMAGE = LIT('Image')
-
-LITERAL_DEVICE_RGB = LIT('DeviceRGB')
-LITERAL_DEVICE_GRAY = LIT('DeviceGRAY')
-LITERAL_DEVICE_CMYK = LIT('DeviceCMYK')
 
 
 
