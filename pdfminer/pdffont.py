@@ -683,13 +683,25 @@ class PDFType1Font(PDFSimpleFont):
             descriptor = dict_value(spec.get('FontDescriptor', {}))
             widths = self._resolve_widths(spec)
         PDFSimpleFont.__init__(self, descriptor, widths, spec)
-        if 'Encoding' not in spec and 'FontFile' in descriptor:
-            # try to recover the missing encoding info from the font file.
-            self.fontfile = stream_value(descriptor.get('FontFile'))
-            length1 = int_value(self.fontfile['Length1'])
-            data = self.fontfile.get_data()[:length1]
-            parser = Type1FontHeaderParser(BytesIO(data))
-            self.cid2unicode = parser.get_encoding()
+        if 'Encoding' not in spec:
+            if 'FontFile' in descriptor:
+                # try to recover the missing encoding info from the font file.
+                self.fontfile = stream_value(descriptor.get('FontFile'))
+                length1 = int_value(self.fontfile['Length1'])
+                data = self.fontfile.get_data()[:length1]
+                parser = Type1FontHeaderParser(BytesIO(data))
+                self.cid2unicode = parser.get_encoding()
+            elif 'FontFile2' in descriptor:
+                self.fontfile = stream_value(descriptor.get('FontFile2'))
+                ttf = TrueTypeFont(self.basefont, BytesIO(self.fontfile.get_data()))
+                try:
+                    self.unicode_map = ttf.create_unicode_map()
+                except TrueTypeFont.CMapNotFound:
+                    pass
+            elif 'FontFile3' in descriptor:
+                self.fontfile = stream_value(descriptor.get('FontFile3'))
+                print 'FontFile3 not supported yet for %s' % self.basefont
+                pass
         return
 
     def __repr__(self):
