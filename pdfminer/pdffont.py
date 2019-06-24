@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import sys
+import logging
 import struct
 from io import BytesIO
 from .cmapdb import CMapDB
@@ -700,7 +701,7 @@ class PDFType1Font(PDFSimpleFont):
                     pass
             elif 'FontFile3' in descriptor:
                 self.fontfile = stream_value(descriptor.get('FontFile3'))
-                print 'FontFile3 not supported yet for %s' % self.basefont
+                logging.warning('FontFile3 not supported yet for %s' % self.basefont)
                 pass
         return
 
@@ -777,10 +778,18 @@ class PDFCIDFont(PDFFont):
                 raise PDFFontError('FontDescriptor is missing')
             descriptor = {}
         ttf = None
+        cff = None
         if 'FontFile2' in descriptor:
-            self.fontfile = stream_value(descriptor.get('FontFile2'))
-            ttf = TrueTypeFont(self.basefont,
-                               BytesIO(self.fontfile.get_data()))
+            try:
+                self.fontfile = stream_value(descriptor.get('FontFile2'))
+                ttf = TrueTypeFont(self.basefont, BytesIO(self.fontfile.get_data()))
+            except:
+                logging.warning('load FontFile2 failed for %s' % self.basefont)
+                pass
+        elif 'FontFile3' in descriptor:
+            self.fontfile = stream_value(descriptor.get('FontFile3'))
+            logging.warning('FontFile3 not supported yet for %s' % self.basefont)
+            # cff = CFFFont(self.basefont, BytesIO(self.fontfile.get_data()))
         self.unicode_map = None
         if 'ToUnicode' in spec:
             self.unicode_map = self._parse_unicode_map(stream_value(spec['ToUnicode']))
@@ -790,6 +799,8 @@ class PDFCIDFont(PDFFont):
                     self.unicode_map = ttf.create_unicode_map()
                 except TrueTypeFont.CMapNotFound:
                     pass
+            elif cff:
+                pass
         else:
             try:
                 self.unicode_map = CMapDB.get_unicode_map(self.cidcoding, self.cmap.is_vertical())
