@@ -692,7 +692,7 @@ class PDFType1Font(PDFSimpleFont):
                 data = self.fontfile.get_data()[:length1]
                 parser = Type1FontHeaderParser(BytesIO(data))
                 self.cid2unicode = parser.get_encoding()
-            elif 'FontFile2' in descriptor:
+            elif not self.unicode_map and 'FontFile2' in descriptor:
                 self.fontfile = stream_value(descriptor.get('FontFile2'))
                 ttf = TrueTypeFont(self.basefont, BytesIO(self.fontfile.get_data()))
                 try:
