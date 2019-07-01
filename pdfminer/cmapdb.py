@@ -33,6 +33,8 @@ from .utils import choplist
 from .utils import nunpack
 
 
+logger = logging.getLogger("pdfminer.cmapdb")
+
 
 unicode_charset_map = [
     (0x0000, 0x007F, u"C0控制符及基本拉丁文 (C0 Control and Basic Latin)"),
@@ -385,7 +387,7 @@ class FileUnicodeMap(UnicodeMap):
             item = self.get_nearest_bfrange(cid)
             if item:
                 self.add_cid2unichr(cid, cid+item[3])
-                logging.info("%s, mapping undefined_char 0x%x(%d) to 0x%x: %s" % ("{}".format(item), cid, cid, cid+item[3], unichr(cid+item[3])))
+                logger.info("CMap-bfrange: %s, mapping undefined_char 0x%x(%d) to 0x%x: %s" % ("{}".format(item), cid, cid, cid+item[3], unichr(cid+item[3])))
             pass
 
         return UnicodeMap.get_unichr(self, cid)
@@ -430,7 +432,7 @@ class CMapDB(object):
     @classmethod
     def _load_data(klass, name):
         filename = '%s.pickle.gz' % name
-        logging.info('loading: %r' % name)
+        logger.info('loading: %r' % name)
         cmap_paths = (os.environ.get('CMAP_PATH', '/usr/share/pdfminer/'),
                       os.path.join(os.path.dirname(__file__), 'cmap'),)
         for directory in cmap_paths:
@@ -632,7 +634,7 @@ class CMapParser(PSStackParser):
 
     def fixup_cmaps(self):
         if self.drop_bfrange_items:
-            logging.warning("drop unexpected bfrange items: {}".format(self.drop_bfrange_items))
+            logger.warning("drop unexpected bfrange items: {}".format(self.drop_bfrange_items))
 
         if not self.cmap_bfrange_items:
             return

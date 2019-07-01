@@ -30,6 +30,9 @@ from .utils import choplist
 from .utils import isnumber
 
 
+logger = logging.getLogger("pdfminer.pdffont")
+
+
 def get_widths(seq):
     widths = {}
     r = []
@@ -701,7 +704,7 @@ class PDFType1Font(PDFSimpleFont):
                     pass
             elif 'FontFile3' in descriptor:
                 self.fontfile = stream_value(descriptor.get('FontFile3'))
-                logging.warning('FontFile3 not supported yet for %s' % self.basefont)
+                logger.warning('FontFile3 not supported yet for %s' % self.basefont)
                 pass
         return
 
@@ -784,11 +787,11 @@ class PDFCIDFont(PDFFont):
                 self.fontfile = stream_value(descriptor.get('FontFile2'))
                 ttf = TrueTypeFont(self.basefont, BytesIO(self.fontfile.get_data()))
             except:
-                logging.warning('load FontFile2 failed for %s' % self.basefont)
+                logger.warning('load FontFile2 failed for %s' % self.basefont)
                 pass
         elif 'FontFile3' in descriptor:
             self.fontfile = stream_value(descriptor.get('FontFile3'))
-            logging.warning('FontFile3 not supported yet for %s' % self.basefont)
+            logger.warning('FontFile3 not supported yet for %s' % self.basefont)
             # cff = CFFFont(self.basefont, BytesIO(self.fontfile.get_data()))
         self.unicode_map = None
         if 'ToUnicode' in spec:
