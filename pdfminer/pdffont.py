@@ -2,6 +2,7 @@
 import sys
 import logging
 import struct
+import re
 from io import BytesIO
 from .cmapdb import CMapDB
 from .cmapdb import CMapParser
@@ -611,9 +612,12 @@ class PDFFont(object):
         return fontname
 
     def _get_family_from_fontname(self, fontname):
-        fontfamily = fontname.split("+")[-1]
+        names = fontname.split("+")
+        fontfamily = names[-1]
         if not fontfamily:
             fontfamily = fontname
+        elif re.match("^[A-Z]{1,5}$", fontfamily) and len(names) > 1:
+            fontfamily = names[-2]
 
         fontfamily = fontfamily.split(',')[0]
         return fontfamily
