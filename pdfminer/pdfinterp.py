@@ -32,6 +32,8 @@ from .utils import mult_matrix
 from .utils import MATRIX_IDENTITY
 
 
+logger = logging.getLogger("pdfminer.interpreter")
+
 ##  Exceptions
 ##
 class PDFResourceError(PDFException):
@@ -109,6 +111,7 @@ class PDFGraphicState(object):
         self.dash = None
         self.intent = None
         self.flatness = None
+        self.clippath = None
         self.color = PDFColor(cs=default_cs)
         self.ncolor = PDFColor(cs=default_cs)
         return
@@ -122,15 +125,16 @@ class PDFGraphicState(object):
         obj.dash = self.dash
         obj.intent = self.intent
         obj.flatness = self.flatness
+        obj.clippath = None
         obj.color = self.color.copy()
         obj.ncolor = self.ncolor.copy()
         return obj
 
     def __repr__(self):
         return ('<PDFGraphicState: linewidth=%r, linecap=%r, linejoin=%r, '
-                ' miterlimit=%r, dash=%r, intent=%r, flatness=%r, color=%r, ncolor=%r>' %
+                ' miterlimit=%r, dash=%r, intent=%r, flatness=%r, color=%r, ncolor=%r, clippath=%r>' %
                 (self.linewidth, self.linecap, self.linejoin,
-                 self.miterlimit, self.dash, self.intent, self.flatness, self.color, self.ncolor))
+                 self.miterlimit, self.dash, self.intent, self.flatness, self.color, self.ncolor, self.clippath))
 
 
 ##  Resource Manager
@@ -175,7 +179,7 @@ class PDFResourceManager(object):
             font = self._cached_fonts[objid]
         else:
             if self.debug:
-                logging.info('get_font: create: objid=%r, spec=%r' % (objid, spec))
+                logger.info('get_font: create: objid=%r, spec=%r' % (objid, spec))
             if STRICT:
                 if spec['Type'] is not LITERAL_FONT:
                     raise PDFFontError('Type is not /Font')
@@ -352,7 +356,7 @@ class PDFPageInterpreter(object):
                 return PREDEFINED_COLORSPACE.get(name)
         for (k, v) in dict_value(resources).iteritems():
             if self.debug:
-                logging.debug('Resource: %r: %r' % (k, v))
+                logger.debug('Resource: %r: %r' % (k, v))
             if k == 'Font':
                 for (fontid, spec) in dict_value(v).iteritems():
                     objid = None
@@ -387,6 +391,8 @@ class PDFPageInterpreter(object):
         self.curpath = []
         # argstack: stack for command arguments.
         self.argstack = []
+
+        self.rect_temp = None
 
         # set some global states.
         # self.scs = self.ncs = None
@@ -436,6 +442,30 @@ class PDFPageInterpreter(object):
         if clr:
             color.set_clr(clr)
         return
+
+    def normalize_rect(self, rc):
+        x0, y0, x1, y1 = rc
+        if x0 > x1:
+            x0, x1 = x1, x0
+        if y0 > y1:
+            y0, y1 = y1, y0
+        return x0, y0, x1, y1
+
+    def intersect_rect(self, rc1, rc2):
+        x0 = max(rc1[0], rc2[0])
+        y0 = max(rc1[1], rc2[1])
+        x1 = min(rc1[2], rc2[2])
+        y1 = min(rc1[3], rc2[3])
+        return x0, y0, x1, y1
+
+    def update_clip_path(self, even_odd):
+        if self.rect_temp is not None:
+            # clippath is (x0, y0, x1, y1)
+            if self.graphicstate.clippath:
+                self.graphicstate.clippath = self.intersect_rect(self.normalize_rect(self.rect_temp), self.graphicstate.clippath)
+            else:
+                self.graphicstate.clippath = self.normalize_rect(self.rect_temp)
+            self.rect_temp = None
 
     # gsave
     def do_q(self):
@@ -531,6 +561,7 @@ class PDFPageInterpreter(object):
         self.curpath.append(('l', x+w, y+h))
         self.curpath.append(('l', x, y+h))
         self.curpath.append(('h',))
+        self.rect_temp = (x,y,w+x,h+y)
         return
 
     # stroke
@@ -590,10 +621,12 @@ class PDFPageInterpreter(object):
 
     # clip
     def do_W(self):
+        self.update_clip_path(even_odd=False)
         return
 
     # clip-even-odd
     def do_W_a(self):
+        self.update_clip_path(even_odd=True)
         return
 
     # setcolorspace-stroking
@@ -816,7 +849,7 @@ class PDFPageInterpreter(object):
             if STRICT:
                 raise PDFInterpreterError('Undefined xobject id: %r' % xobjid)
             return
-        if self.debug: logging.info('Processing xobj: %r' % xobj)
+        if self.debug: logger.info('Processing xobj: %r' % xobj)
         subtype = xobj.get('Subtype')
         if subtype is LITERAL_FORM and 'BBox' in xobj:
             interpreter = self.dup()
@@ -839,7 +872,7 @@ class PDFPageInterpreter(object):
         return
 
     def process_page(self, page):
-        if self.debug: logging.info('Processing page: %r' % page)
+        if self.debug: logger.info('Processing page: %r' % page)
         (x0, y0, x1, y1) = page.mediabox
         if page.rotate == 90:
             ctm = (0, -1, 1, 0, -y0, x1)
@@ -849,6 +882,7 @@ class PDFPageInterpreter(object):
             ctm = (0, 1, -1, 0, y1, -x0)
         else:
             ctm = (1, 0, 0, 1, -x0, -y0)
+        logger.debug("begin_page: mediabox={} rotate={} ctm={}".format(page.mediabox, page.rotate, ctm))
         self.device.begin_page(page, ctm)
         self.render_contents(page.resources, page.contents, ctm=ctm)
         self.device.end_page(page)
@@ -859,7 +893,7 @@ class PDFPageInterpreter(object):
     #   This method may be called recursively.
     def render_contents(self, resources, streams, ctm=MATRIX_IDENTITY):
         if self.debug:
-            logging.info('render_contents: resources=%r, streams=%r, ctm=%r' %
+            logger.info('render_contents: resources=%r, streams=%r, ctm=%r' %
                      (resources, streams, ctm))
         self.init_resources(resources)
         self.init_state(ctm)
@@ -886,24 +920,24 @@ class PDFPageInterpreter(object):
                     if nargs:
                         args = self.pop(nargs)
                         if self.debug and name not in self.exec_logger_filter:
-                            logging.debug('exec-n: %s %r' % (name, args))
+                            logger.debug('exec-n: %s %r' % (name, args))
                         if len(args) == nargs:
                             func(*args)
                     else:
                         args = self.argstack[:]
                         # if self.debug:
-                        #     logging.debug('exec: %s' % name)
+                        #     logger.debug('exec: %s' % name)
                         func()
                         if self.debug and name not in self.exec_logger_filter:
                             if len(args) > len(self.argstack):
-                                logging.debug('exec: %s %r' % (name, args[len(self.argstack):]))
+                                logger.debug('exec: %s %r' % (name, args[len(self.argstack):]))
                             else:
-                                logging.debug('exec: %s' % name)
+                                logger.debug('exec: %s' % name)
                 else:
                     if STRICT:
                         raise PDFInterpreterError('Unknown operator: %r' % name)
                     else:
-                        logging.debug('Unknown operator: %r' % name)
+                        logger.debug('Unknown operator: %r' % name)
             else:
                 self.push(obj)
         return
