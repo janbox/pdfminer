@@ -453,12 +453,37 @@ class PDFPageInterpreter(object):
         x1, y1 = apply_matrix_pt(self.ctm, (rc[2], rc[3]))
         return x0, y0, x1, y1
 
+    def optimize_path(self, path):
+        # remove duplicated item in path:
+        # 'mh' -> none
+        # 'hh' -> 'h
+        r = []
+        for item in path:
+            if not r:
+                r.append(item)
+            elif r[-1] == item:
+                pass
+            elif r[-1][0] == 'm' and item[0] == 'h':
+                r.pop()
+                if r and r[-1] != item:
+                    r.append(item)
+            else:
+                r.append(item)
+        # remove 'm' from tail
+        while r and r[-1][0] == 'm':
+            r.pop()
+
+        # if r != path:
+        #     logger.debug("clip path: {} => {}".format(path, r))
+
+        return r
+
     def path_to_rect(self, path):
+        if path:
+            path = self.optimize_path(path)
+
         if not path:
             return None
-
-        # remove duplicated item in path: ('h')
-        path = [item for idx, item in enumerate(path) if idx == 0 or item != path[idx-1]]
 
         if len(path) == 5 and 'mlllh' == reduce(lambda x, y: x + y[0], path, ''):
             pos_x = set()
