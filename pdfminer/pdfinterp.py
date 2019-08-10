@@ -457,6 +457,9 @@ class PDFPageInterpreter(object):
         if not path:
             return None
 
+        # remove duplicated item in path: ('h')
+        path = [item for idx, item in enumerate(path) if idx == 0 or item != path[idx-1]]
+
         if len(path) == 5 and 'mlllh' == reduce(lambda x, y: x + y[0], path, ''):
             pos_x = set()
             pos_y = set()
@@ -471,7 +474,7 @@ class PDFPageInterpreter(object):
         x0, y0 = reduce(lambda s, c: (min(s[0], c[0]), min(s[1], c[1])), pts)
         x1, y1 = reduce(lambda s, c: (max(s[0], c[0]), max(s[1], c[1])), pts)
         bbox = (x0, y0, x1, y1)
-        logger.warning("complex clip path not supported -- using boundbox instead. {} => {}".format(path[0:10], bbox))
+        logger.warning("complex clip path not supported -- using boundbox instead. {}: {} => {}".format(len(path), path[0:10], bbox))
         return bbox
 
     def get_point_from_path(self, path):
