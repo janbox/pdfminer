@@ -467,26 +467,26 @@ class PDFPageInterpreter(object):
             if len(pos_x) == 2 and len(pos_y) == 2:
                 return min(pos_x), min(pos_y), max(pos_x), max(pos_y)
 
+        pts = self.get_point_from_path(path)
+        x0, y0 = reduce(lambda s, c: (min(s[0], c[0]), min(s[1], c[1])), pts)
+        x1, y1 = reduce(lambda s, c: (max(s[0], c[0]), max(s[1], c[1])), pts)
+        bbox = (x0, y0, x1, y1)
+        logger.warning("complex clip path not supported -- using boundbox instead. {} => {}".format(path[0:10], bbox))
+        return bbox
+
+    def get_point_from_path(self, path):
         pts = []
-        has_curve = False
         for item in path:
             if item[0] in ['m', 'l']:
                 pts.append((item[1], item[2]))
             elif item[0] == 'c':
-                has_curve = True
-                pts.append((item[1], item[2]))  # control-point
-                pts.append((item[3], item[4]))  # control-point
-                # pts.append((item[5], item[6]))    # end-point
+                # pts.append((item[1], item[2]))  # control-point
+                # pts.append((item[3], item[4]))  # control-point
+                pts.append((item[5], item[6]))    # end-point
             elif item[0] in ['v', 'y']:
-                has_curve = True
                 # pts.append((item[1], item[2]))      # control-point
                 pts.append((item[3], item[4]))  # end-point
-
-        x0, y0 = reduce(lambda s, c: (min(s[0], c[0]), min(s[1], c[1])), pts)
-        x1, y1 = reduce(lambda s, c: (max(s[0], c[0]), max(s[1], c[1])), pts)
-        bbox = (x0, y0, x1, y1)
-        logger.warning("complex clip path not supported -- using boundbox instead. {} => {}".format(path, bbox))
-        return bbox
+        return pts
 
     def update_clip_path(self, even_odd):
         # support rectangle clip-path only
