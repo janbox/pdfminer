@@ -28,7 +28,7 @@ from .pdffont import PDFCIDFont
 from .pdfcolor import PDFColorSpace, PDFColor, LITERAL_DEVICE_CMYK, LITERAL_DEVICE_RGB, LITERAL_DEVICE_GRAY
 from .pdfcolor import PREDEFINED_COLORSPACE
 from .utils import choplist
-from .utils import mult_matrix
+from .utils import mult_matrix, apply_matrix_pt
 from .utils import MATRIX_IDENTITY
 
 
@@ -458,13 +458,20 @@ class PDFPageInterpreter(object):
         y1 = min(rc1[3], rc2[3])
         return x0, y0, x1, y1
 
+    def apply_matrix_rect(self, rc):
+        x0, y0 = apply_matrix_pt(self.ctm, (rc[0], rc[1]))
+        x1, y1 = apply_matrix_pt(self.ctm, (rc[2], rc[3]))
+        return x0, y0, x1, y1
+
     def update_clip_path(self, even_odd):
         if self.rect_temp is not None:
             # clippath is (x0, y0, x1, y1)
+            # rc = self.rect_temp
+            rc = self.apply_matrix_rect(self.rect_temp)
             if self.graphicstate.clippath:
-                self.graphicstate.clippath = self.intersect_rect(self.normalize_rect(self.rect_temp), self.graphicstate.clippath)
+                self.graphicstate.clippath = self.intersect_rect(self.normalize_rect(rc), self.graphicstate.clippath)
             else:
-                self.graphicstate.clippath = self.normalize_rect(self.rect_temp)
+                self.graphicstate.clippath = self.normalize_rect(rc)
             self.rect_temp = None
 
     # gsave
