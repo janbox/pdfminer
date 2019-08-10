@@ -56,6 +56,9 @@ class PDFDevice(object):
     def render_string(self, textstate, seq, graphicstate):
         return
 
+    def update_clippath(self, graphicstate, evenodd, path):
+        return
+
 
 ##  PDFTextDevice
 ##

@@ -441,90 +441,9 @@ class PDFPageInterpreter(object):
             color.set_clr(clr)
         return
 
-    def intersect_rect(self, rc1, rc2):
-        x0 = max(rc1[0], rc2[0])
-        y0 = max(rc1[1], rc2[1])
-        x1 = min(rc1[2], rc2[2])
-        y1 = min(rc1[3], rc2[3])
-        return x0, y0, x1, y1
-
-    def apply_matrix_rect(self, rc):
-        x0, y0 = apply_matrix_pt(self.ctm, (rc[0], rc[1]))
-        x1, y1 = apply_matrix_pt(self.ctm, (rc[2], rc[3]))
-        return x0, y0, x1, y1
-
-    def optimize_path(self, path):
-        # remove duplicated item in path:
-        # 'mh' -> none
-        # 'hh' -> 'h
-        r = []
-        for item in path:
-            if not r:
-                r.append(item)
-            elif r[-1] == item:
-                pass
-            elif r[-1][0] == 'm' and item[0] == 'h':
-                r.pop()
-                if r and r[-1] != item:
-                    r.append(item)
-            else:
-                r.append(item)
-        # remove 'm' from tail
-        while r and r[-1][0] == 'm':
-            r.pop()
-
-        # if r != path:
-        #     logger.debug("clip path: {} => {}".format(path, r))
-
-        return r
-
-    def path_to_rect(self, path):
-        if path:
-            path = self.optimize_path(path)
-
-        if not path:
-            return None
-
-        if len(path) == 5 and 'mlllh' == reduce(lambda x, y: x + y[0], path, ''):
-            pos_x = set()
-            pos_y = set()
-            for item in path:
-                if item[0] in ['m', 'l']:
-                    pos_x.add(item[1])
-                    pos_y.add(item[2])
-            if len(pos_x) == 2 and len(pos_y) == 2:
-                return min(pos_x), min(pos_y), max(pos_x), max(pos_y)
-
-        pts = self.get_point_from_path(path)
-        x0, y0 = reduce(lambda s, c: (min(s[0], c[0]), min(s[1], c[1])), pts)
-        x1, y1 = reduce(lambda s, c: (max(s[0], c[0]), max(s[1], c[1])), pts)
-        bbox = (x0, y0, x1, y1)
-        logger.warning("complex clip path not supported -- using boundbox instead. {}: {} => {}".format(len(path), path[0:10], bbox))
-        return bbox
-
-    def get_point_from_path(self, path):
-        pts = []
-        for item in path:
-            if item[0] in ['m', 'l']:
-                pts.append((item[1], item[2]))
-            elif item[0] == 'c':
-                # pts.append((item[1], item[2]))  # control-point
-                # pts.append((item[3], item[4]))  # control-point
-                pts.append((item[5], item[6]))    # end-point
-            elif item[0] in ['v', 'y']:
-                # pts.append((item[1], item[2]))      # control-point
-                pts.append((item[3], item[4]))  # end-point
-        return pts
-
     def update_clip_path(self, even_odd):
-        # support rectangle clip-path only
-        rc = self.path_to_rect(self.curpath)
-        if rc:
-            rc = self.apply_matrix_rect(rc)
-            if self.graphicstate.clippath:
-                self.graphicstate.clippath = self.intersect_rect(rc, self.graphicstate.clippath)
-            else:
-                self.graphicstate.clippath = rc
+        self.device.update_clippath(self.graphicstate, even_odd, self.curpath)
+        return
 
     # gsave
     def do_q(self):
