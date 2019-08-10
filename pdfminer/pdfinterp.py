@@ -392,8 +392,6 @@ class PDFPageInterpreter(object):
         # argstack: stack for command arguments.
         self.argstack = []
 
-        self.rect_temp = None
-
         # set some global states.
         # self.scs = self.ncs = None
         # if self.csmap:
@@ -443,14 +441,6 @@ class PDFPageInterpreter(object):
             color.set_clr(clr)
         return
 
-    def normalize_rect(self, rc):
-        x0, y0, x1, y1 = rc
-        if x0 > x1:
-            x0, x1 = x1, x0
-        if y0 > y1:
-            y0, y1 = y1, y0
-        return x0, y0, x1, y1
-
     def intersect_rect(self, rc1, rc2):
         x0 = max(rc1[0], rc2[0])
         y0 = max(rc1[1], rc2[1])
@@ -463,16 +453,50 @@ class PDFPageInterpreter(object):
         x1, y1 = apply_matrix_pt(self.ctm, (rc[2], rc[3]))
         return x0, y0, x1, y1
 
+    def path_to_rect(self, path):
+        if not path:
+            return None
+
+        if len(path) == 5 and 'mlllh' == reduce(lambda x, y: x + y[0], path, ''):
+            pos_x = set()
+            pos_y = set()
+            for item in path:
+                if item[0] in ['m', 'l']:
+                    pos_x.add(item[1])
+                    pos_y.add(item[2])
+            if len(pos_x) == 2 and len(pos_y) == 2:
+                return min(pos_x), min(pos_y), max(pos_x), max(pos_y)
+
+        pts = []
+        has_curve = False
+        for item in path:
+            if item[0] in ['m', 'l']:
+                pts.append((item[1], item[2]))
+            elif item[0] == 'c':
+                has_curve = True
+                pts.append((item[1], item[2]))  # control-point
+                pts.append((item[3], item[4]))  # control-point
+                # pts.append((item[5], item[6]))    # end-point
+            elif item[0] in ['v', 'y']:
+                has_curve = True
+                # pts.append((item[1], item[2]))      # control-point
+                pts.append((item[3], item[4]))  # end-point
+
+        x0, y0 = reduce(lambda s, c: (min(s[0], c[0]), min(s[1], c[1])), pts)
+        x1, y1 = reduce(lambda s, c: (max(s[0], c[0]), max(s[1], c[1])), pts)
+        bbox = (x0, y0, x1, y1)
+        logger.warning("complex clip path not supported -- using boundbox instead. {} => {}".format(path, bbox))
+        return bbox
+
     def update_clip_path(self, even_odd):
-        if self.rect_temp is not None:
-            # clippath is (x0, y0, x1, y1)
-            # rc = self.rect_temp
-            rc = self.apply_matrix_rect(self.rect_temp)
+        # support rectangle clip-path only
+        rc = self.path_to_rect(self.curpath)
+        if rc:
+            rc = self.apply_matrix_rect(rc)
             if self.graphicstate.clippath:
-                self.graphicstate.clippath = self.intersect_rect(self.normalize_rect(rc), self.graphicstate.clippath)
+                self.graphicstate.clippath = self.intersect_rect(rc, self.graphicstate.clippath)
             else:
-                self.graphicstate.clippath = self.normalize_rect(rc)
-            self.rect_temp = None
+                self.graphicstate.clippath = rc
 
     # gsave
     def do_q(self):
@@ -568,7 +592,6 @@ class PDFPageInterpreter(object):
         self.curpath.append(('l', x+w, y+h))
         self.curpath.append(('l', x, y+h))
         self.curpath.append(('h',))
-        self.rect_temp = (x,y,w+x,h+y)
         return
 
     # stroke
